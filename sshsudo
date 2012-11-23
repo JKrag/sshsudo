@@ -74,43 +74,52 @@ runsudo ()
     local REMOTECOMPUTER=${ACCOUNT#*@}
     local REMOTESCRIPT=
     local REMOTECOMMAND=$COMMAND
-    local SSHARGS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
     if [ $REMOTEUSER = $REMOTECOMPUTER ]; then
         # There is no @, i.e., only computer name is given
         REMOTEUSER=$DEFAULTUSER
     fi
+    if [ $VERBOSE -ne 0 ]; then
     echo =========================${REMOTEUSER}@$REMOTECOMPUTER: sudo $COMMAND $ARGUMENTS
+    fi
     if [ $COPY -ne 0 ]; then
         # Make a script + seconds since 1970-01-01
-        REMOTESCRIPT=/tmp/`basename $COMMAND``date +%s`
+        REMOTESCRIPT=/tmp/$COMMAND`date +%s`
         if [ $VERBOSE -ne 0 ]; then 
             echo $REMOTECOMPUTER: Secure copy \"$COMMAND\" to \"$REMOTESCRIPT\"
         fi
         # Copy to remote computer. Quote target name on the remote computer for script name 
         # that contains " "
-        sshpass -p "$PASSWORD" scp "$SSHARGS" "$COMMAND" "$REMOTEUSER@$REMOTECOMPUTER:'$REMOTESCRIPT'"
+        if [ $VERBOSE -ne 0 ]; then 
+            scp "$COMMAND" "$REMOTEUSER@$REMOTECOMPUTER:'$REMOTESCRIPT'"
+        else
+            scp -q "$COMMAND" "$REMOTEUSER@$REMOTECOMPUTER:'$REMOTESCRIPT'"
+        fi
         REMOTECOMMAND=$REMOTESCRIPT
+    else
+        echo $REMOTECOMPUTER
     fi
 
     # Assume we are lucky, result is fine. 
     local RES=DONE
     # Invalidate the sudo timestamp. Simplify the situation. Henceforth sudo always ask for a password 
-    sshpass -p "$PASSWORD" ssh "$SSHARGS" "$REMOTEUSER@$REMOTECOMPUTER" "sudo -K"
+    ssh "$REMOTEUSER@$REMOTECOMPUTER" "sudo -K"
 
     # Use lock file to inform pipewrap function to exit. 
-    local lockFile=`mktemp`
-    eval pipewrap '$PASSWORD' '$lockFile' | (sshpass -p "$PASSWORD" ssh "$SSHARGS" "$REMOTEUSER@$REMOTECOMPUTER" "sudo -S '$REMOTECOMMAND' $ARGUMENTS"; rm "$lockFile")
+    local lockFile=`mktemp -t tempssh`
+    eval pipewrap '$PASSWORD' '$lockFile' | (ssh  "$REMOTEUSER@$REMOTECOMPUTER" "sudo -p '' -S '$REMOTECOMMAND' $ARGUMENTS"; rm "$lockFile") 
 
     if [ $? -ne 0 ]; then
        RES=FAILED 
     fi
     if [ $COPY -ne 0 ]; then
-        sshpass -p $PASSWORD ssh "$SSHARGS" "$REMOTEUSER@$REMOTECOMPUTER" rm \'$REMOTESCRIPT\'
+        ssh "$REMOTEUSER@$REMOTECOMPUTER" rm \'$REMOTESCRIPT\'
         if [ $VERBOSE -ne 0 ]; then 
             echo Remove temporary script  \"$REMOTESCRIPT\" at [$REMOTECOMPUTER]
         fi
     fi
+    if [ $VERBOSE -ne 0 ]; then
     echo ----------------------------------${RES}!!----------------------------------------
+    fi
 }
 
 
